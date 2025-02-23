@@ -1,0 +1,96 @@
+# DATABSE SERVICEACCOUNT
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres
+---
+# DATABSE ROLEBINDING
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: postgres:anyuid
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:anyuid
+subjects:
+  - kind: ServiceAccount
+    name: postgres
+    namespace: <namespace>
+---
+# DATABASE VOLUME
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres
+spec:
+  storageClassName: ocs-storagecluster-ceph-rbd
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+# DATABASE SECRET
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres
+stringData:
+  USER: nextcloud
+  PASSWORD: nexcloud
+  DB: nexcloud
+type: Opaque
+---
+# DATABASE STATEFULSET
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  serviceName: "postgres"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      serviceAccountName: postgres
+      securityContext:
+        runAsUser: 0
+      volumes:
+        - name: postgres
+          persistentVolumeClaim:
+            claimName: postgres
+      containers:
+        - name: postgres
+          image: docker.io/s390x/postgres:17.4
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: postgres
+              mountPath: /var/lib/postgresql/data
+          envFrom:
+            - secretRef:
+                name: postgres
+              prefix: POSTGRES_
+---
+# DATABASE SERVICE
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  clusterIP: "None"
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
